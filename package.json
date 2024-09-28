@@ -2,11 +2,14 @@
   "name": "same-day-ramps-backend",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
-    "build": "npm run clean && tsc",
-    "clean": "rimraf dist"
+    "build": "rm -rf dist && tsc",
+    "clean": "rm -rf dist"
   },
   "keywords": [],
   "author": "",
