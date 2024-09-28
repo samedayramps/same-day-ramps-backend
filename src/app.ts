@@ -18,7 +18,8 @@ app.use(express.json());
 const corsOptions = {
   origin: [
     process.env.FRONTEND_URL || 'http://localhost:3000',
-    process.env.FRONTEND_IP_URL || 'http://192.168.1.10:3000'
+    process.env.FRONTEND_IP_URL || 'http://192.168.1.10:3000',
+    'https://app.samedayramps.com'
   ].filter(Boolean),
   credentials: true,
   optionsSuccessStatus: 200,
