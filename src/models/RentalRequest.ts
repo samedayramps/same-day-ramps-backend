@@ -19,7 +19,7 @@ export interface IRentalRequest extends Document {
     mobilityAids: string[];
   };
   installAddress: string;
-  status: 'pending' | 'approved' | 'rejected' | 'archived';
+  status: 'pending' | 'job created' | 'rejected';
   salesStage: SalesStage;
   customerId?: mongoose.Types.ObjectId;
   quoteId?: mongoose.Types.ObjectId;
@@ -45,7 +45,11 @@ const RentalRequestSchema: Schema = new Schema(
       mobilityAids: [{ type: String }],
     },
     installAddress: { type: String, required: true },
-    status: { type: String, enum: ['pending', 'approved', 'rejected', 'archived'], default: 'pending' },
+    status: { 
+      type: String, 
+      enum: ['pending', 'job created', 'rejected'], 
+      default: 'pending' 
+    },
     salesStage: { type: String, enum: Object.values(SalesStage), default: SalesStage.RENTAL_REQUEST },
     customerId: { type: Schema.Types.ObjectId, ref: 'Customer' },
     quoteId: { type: Schema.Types.ObjectId, ref: 'Quote' },

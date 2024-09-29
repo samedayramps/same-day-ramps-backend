@@ -114,7 +114,7 @@ export const createJobFromRentalRequest = async (
 
     // Map rental request data to job data
     const jobData = {
-      stage: JobStage.REQUESTED, // Set initial job stage
+      stage: JobStage.REQUESTED,
       customerInfo: {
         ...rentalRequest.customerInfo,
         installAddress: rentalRequest.installAddress,
@@ -123,10 +123,8 @@ export const createJobFromRentalRequest = async (
       rampConfiguration: {
         rentalDuration: rentalRequest.rampDetails.rentalDuration || 1,
         totalLength: rentalRequest.rampDetails.rampLength || 0,
-        // Initialize components as empty array; can be updated later
         components: [],
       },
-      // Initialize other fields if necessary
     };
 
     // Create the new job
@@ -136,6 +134,7 @@ export const createJobFromRentalRequest = async (
     // Update the rental request to reference the new job
     rentalRequest.jobId = newJob._id;
     rentalRequest.salesStage = SalesStage.JOB_CREATED;
+    rentalRequest.status = 'job created'; // Update the status here
     await rentalRequest.save();
 
     res.status(201).json(newJob);
