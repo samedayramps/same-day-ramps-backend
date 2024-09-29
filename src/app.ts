@@ -20,6 +20,7 @@ const corsOptions: cors.CorsOptions = {
     const allowedOrigins = [
       ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : []),
       process.env.FRONTEND_IP_URL || 'http://192.168.1.10:3000',
+      'http://localhost:3000', // Add this line to allow localhost:3000
     ].filter(Boolean);
 
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {

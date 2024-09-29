@@ -8,6 +8,7 @@ import {
   handleValidation,
 } from '../middlewares/validationMiddleware';
 import { Request, Response, NextFunction } from 'express';
+import { RentalRequest } from '../models/RentalRequest';
 
 const router = express.Router();
 
@@ -37,5 +38,37 @@ router.post(
   handleValidation,
   asyncHandler(rentalRequestController.createJobFromRentalRequest)
 );
+
+// New route for updating rental request status
+router.put('/:id/status', asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['pending', 'job created', 'rejected'].includes(status)) {
+      res.status(400).json({ message: 'Invalid status' });
+      return;
+    }
+
+    const rentalRequest = await RentalRequest.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true }
+    );
+
+    if (!rentalRequest) {
+      res.status(404).json({ message: 'Rental request not found' });
+      return;
+    }
+
+    res.json(rentalRequest);
+  } catch (error) {
+    if (error instanceof Error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    } else {
+      res.status(500).json({ message: 'An unknown error occurred' });
+    }
+  }
+}));
 
 export default router;

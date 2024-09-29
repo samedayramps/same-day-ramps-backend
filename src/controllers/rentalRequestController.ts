@@ -5,6 +5,7 @@ import { RentalRequest, IRentalRequest } from '../models/RentalRequest';
 import { Job } from '../models/Job';
 import { SalesStage } from '../types/RentalRequest';
 import { JobStage } from '../types/Job';
+import { sendPushoverNotification } from '../utils/pushoverNotification';
 
 export const getAllRentalRequests = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -33,6 +34,26 @@ export const createRentalRequest = async (req: Request, res: Response, next: Nex
     const rentalRequestData: Partial<IRentalRequest> = req.body;
     const rentalRequest = new RentalRequest(rentalRequestData);
     await rentalRequest.save();
+
+    // Send Pushover notification
+    const notificationMessage = `
+New Rental Request:
+Name: ${rentalRequest.customerInfo.firstName} ${rentalRequest.customerInfo.lastName}
+Email: ${rentalRequest.customerInfo.email}
+Phone: ${rentalRequest.customerInfo.phone}
+Address: ${rentalRequest.installAddress}
+Ramp Length: ${rentalRequest.rampDetails.rampLength || 'Unknown'}
+Rental Duration: ${rentalRequest.rampDetails.rentalDuration || 'Unknown'}
+Install Timeframe: ${rentalRequest.rampDetails.installTimeframe}
+    `.trim();
+
+    await sendPushoverNotification({
+      token: process.env.PUSHOVER_API_TOKEN || '',
+      user: process.env.PUSHOVER_USER_KEY || '',
+      message: notificationMessage,
+      title: 'New Rental Request',
+    });
+
     res.status(201).json(rentalRequest);
   } catch (error) {
     next(error);
