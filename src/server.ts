@@ -7,7 +7,7 @@ import mongoose from 'mongoose';
 import app from './app';
 
 const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/samedayramps';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://ty:ReGGie.02@samedayramps-db.ulmux.mongodb.net/?retryWrites=true&w=majority&appName=samedayramps-db';
 
 mongoose
   .connect(MONGO_URI)
