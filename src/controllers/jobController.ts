@@ -805,7 +805,9 @@ export const acceptQuote = async (
       throw new CustomError('Job not found', 404);
     }
 
-    if (job.stage !== JobStage.QUOTE_SENT) {
+    // Check if the job is in a valid stage for accepting a quote
+    const validStages = [JobStage.REQUESTED, JobStage.QUOTE_SENT];
+    if (!validStages.includes(job.stage)) {
       logger.warn(`Invalid job stage for accepting quote: ${job.stage}`);
       throw new CustomError('Quote cannot be accepted at this stage', 400);
     }
