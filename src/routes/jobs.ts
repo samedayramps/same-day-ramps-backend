@@ -13,6 +13,8 @@ import {
 import { JobStage } from '../types/Job';
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
+import { Job } from '../models/Job'; // Add this import
+import { CustomError } from '../utils/customError'; // Add this import
 
 const router = express.Router();
 
@@ -80,5 +82,27 @@ router.post(
   '/:id/create-agreement-link',
   asyncHandler(jobController.createAgreementLink)
 );
+
+// Route for generating a quote
+router.post('/:id/generate-quote', asyncHandler(jobController.generateQuote));
+
+// Route for previewing a quote (if needed)
+router.get('/:id/preview-quote', asyncHandler(async (req, res, next) => {
+  const jobId = req.params.id;
+  try {
+    const job = await Job.findById(jobId);
+    if (!job || !job.quoteHtml) {
+      throw new CustomError('Quote not found', 404);
+    }
+    res.send(job.quoteHtml);
+  } catch (error) {
+    next(error);
+  }
+}));
+
+// Route for sending a generated quote
+router.post('/:id/send-generated-quote', asyncHandler(jobController.sendGeneratedQuote));
+
+router.post('/:id/accept-quote', asyncHandler(jobController.acceptQuote));
 
 export default router;

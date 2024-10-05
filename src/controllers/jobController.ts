@@ -9,6 +9,7 @@ import {
   sendInstallationConfirmationEmail,
   sendRemovalConfirmationEmail,
   sendJobCompletionEmail,
+  sendEmail, // Ensure you have a function to send emails
 } from '../services/emailService';
 import { JobStage, RampConfiguration } from '../types/Job';
 import logger from '../utils/logger';
@@ -16,6 +17,7 @@ import mongoose from 'mongoose'; // Add this import
 import Stripe from 'stripe';
 import { CustomError } from '../utils/customError';
 import axios from 'axios';
+import { sendPushoverNotification } from '../utils/pushoverNotification';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2024-06-20', // Update to the latest API version
@@ -480,6 +482,13 @@ export const createPaymentLink = async (
       },
     });
 
+    // Validate the frontend URL
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (!frontendUrl || !/^https?:\/\/.+/.test(frontendUrl)) {
+      logger.error(`Invalid FRONTEND_URL: ${frontendUrl}`);
+      throw new CustomError('Invalid frontend URL configuration', 500);
+    }
+
     // Create the payment link using the price ID
     const paymentLink = await stripe.paymentLinks.create({
       line_items: [
@@ -488,13 +497,13 @@ export const createPaymentLink = async (
           quantity: 1,
         },
       ],
-      after_completion: { type: 'redirect', redirect: { url: `${process.env.FRONTEND_URL}/jobs/${jobId}` } },
+      after_completion: { type: 'redirect', redirect: { url: `${frontendUrl}/jobs/${jobId}` } },
     });
 
     // Save the payment link URL to the job in the database
     job.paymentLinkUrl = paymentLink.url;
     job.stage = JobStage.QUOTE_SENT;
-    await job.save();
+    await job.save(); // Ensure this line is executed
 
     logger.info(`Payment link created successfully for job ${jobId}`, { paymentLinkUrl: paymentLink.url });
     res.json({ paymentLinkUrl: paymentLink.url });
@@ -607,5 +616,217 @@ export const createAgreementLink = async (
       });
       next(err);
     }
+  }
+};
+
+export const generateAndSendQuote = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const jobId = req.params.id;
+
+  try {
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      logger.warn(`Job not found for ID: ${jobId}`);
+      throw new CustomError('Job not found', 404);
+    }
+
+    if (!job.customerInfo?.email) {
+      logger.warn(`Customer email is missing for job: ${jobId}`);
+      throw new CustomError('Customer email is missing', 400);
+    }
+
+    const quoteHtml = `
+      <h1>Quote for Ramp Rental</h1>
+      <p>Dear ${job.customerInfo.firstName} ${job.customerInfo.lastName},</p>
+      <p>Here are the details of your ramp rental:</p>
+      <ul>
+        <li>Total Length: ${job.rampConfiguration?.totalLength ?? 'N/A'} ft</li>
+        <li>Components: ${job.rampConfiguration?.components?.map(c => `${c.quantity} x ${c.type} (${c.size})`).join(', ') ?? 'N/A'}</li>
+        <li>Monthly Rate: $${job.pricing?.monthlyRate?.toFixed(2) ?? 'N/A'}</li>
+        <li>Upfront Fee: $${job.pricing?.upfrontFee?.toFixed(2) ?? 'N/A'}</li>
+      </ul>
+      <p>If you wish to accept this quote, please click the button below:</p>
+      <a href="${process.env.FRONTEND_URL}/accept-quote/${jobId}" style="display: inline-block; padding: 10px 20px; color: white; background-color: green; text-decoration: none;">Accept Quote</a>
+    `;
+
+    await sendEmail({
+      to: job.customerInfo.email,
+      subject: 'Your Ramp Rental Quote',
+      html: quoteHtml,
+    });
+
+    logger.info(`Quote email sent successfully for job: ${jobId}`);
+    res.json({ message: 'Quote email sent successfully' });
+  } catch (error) {
+    logger.error(`Error generating and sending quote for job ${jobId}`, error);
+    next(error);
+  }
+};
+
+export const generateQuote = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const jobId = req.params.id;
+
+  try {
+    console.log(`Generating quote for job ${jobId}`);
+
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      logger.warn(`Job not found for ID: ${jobId}`);
+      throw new CustomError('Job not found', 404);
+    }
+
+    const quoteHtml = `
+      <h1>Quote for Ramp Rental</h1>
+      <p>Dear ${job.customerInfo?.firstName ?? 'Customer'} ${job.customerInfo?.lastName ?? ''},</p>
+      <p>Here are the details of your ramp rental:</p>
+      <ul>
+        <li>Total Length: ${job.rampConfiguration?.totalLength ?? 'N/A'} ft</li>
+        <li>Components: ${job.rampConfiguration?.components?.map(c => `${c.quantity} x ${c.type} (${c.size})`).join(', ') ?? 'N/A'}</li>
+        <li>Monthly Rate: $${job.pricing?.monthlyRate?.toFixed(2) ?? 'N/A'}</li>
+        <li>Upfront Fee: $${job.pricing?.upfrontFee?.toFixed(2) ?? 'N/A'}</li>
+      </ul>
+      <p><strong>Please note:</strong> The pricing provided in this quote is subject to change depending on the final configuration of the ramp based on your specific needs and site requirements.</p>
+      <p>By accepting this quote:</p>
+      <ul>
+        <li>We will contact you to schedule an installation date and time that works best for you.</li>
+        <li>We will send you an invoice for the upfront fee and a rental agreement for your review and signature.</li>
+        <li>Our team will conduct a final assessment to ensure the ramp configuration meets your needs and complies with safety standards.</li>
+      </ul>
+      <p>If you have any questions or need to discuss any specifics of the quote, please don't hesitate to contact us.</p>
+      <p>If you wish to accept this quote and proceed with the ramp rental, please click the button below:</p>
+      <a href="${process.env.FRONTEND_URL}/jobs/${jobId}/accept-quote" style="display: inline-block; padding: 10px 20px; color: white; background-color: green; text-decoration: none;">Accept Quote</a>
+      <p>Thank you for choosing Same Day Ramps. We look forward to serving you!</p>
+    `;
+
+    console.log('Generated quote HTML:', quoteHtml);
+
+    job.quoteHtml = quoteHtml;
+    await job.save();
+
+    console.log('Quote saved to job');
+
+    logger.info(`Quote generated successfully for job: ${jobId}`);
+    res.json({ message: 'Quote generated successfully', quoteHtml });
+  } catch (error) {
+    logger.error(`Error generating quote for job ${jobId}`, error);
+    console.error('Detailed error:', error);
+    next(error);
+  }
+};
+
+export const sendGeneratedQuote = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const jobId = req.params.id;
+
+  try {
+    console.log(`Attempting to send generated quote for job ${jobId}`);
+
+    const job = await Job.findById(jobId);
+    console.log('Job found:', job);
+
+    if (!job || !job.quoteHtml) {
+      logger.warn(`Quote not found for job ID: ${jobId}`);
+      throw new CustomError('Quote not found', 404);
+    }
+
+    if (!job.customerInfo?.email) {
+      logger.warn(`Customer email is missing for job: ${jobId}`);
+      throw new CustomError('Customer email is missing', 400);
+    }
+
+    const quoteHtml = `
+      <h1>Quote for Ramp Rental</h1>
+      <p>Dear ${job.customerInfo.firstName} ${job.customerInfo.lastName},</p>
+      <p>Here are the details of your ramp rental:</p>
+      <ul>
+        <li>Total Length: ${job.rampConfiguration?.totalLength ?? 'N/A'} ft</li>
+        <li>Components: ${job.rampConfiguration?.components?.map(c => `${c.quantity} x ${c.type} (${c.size})`).join(', ') ?? 'N/A'}</li>
+        <li>Monthly Rate: $${job.pricing?.monthlyRate?.toFixed(2) ?? 'N/A'}</li>
+        <li>Upfront Fee: $${job.pricing?.upfrontFee?.toFixed(2) ?? 'N/A'}</li>
+      </ul>
+      <p><strong>Please note:</strong> The pricing provided in this quote is subject to change depending on the final configuration of the ramp based on your specific needs and site requirements.</p>
+      <p>By accepting this quote:</p>
+      <ul>
+        <li>We will contact you to schedule an installation date and time that works best for you.</li>
+        <li>We will send you an invoice for the upfront fee and a rental agreement for your review and signature.</li>
+        <li>Our team will conduct a final assessment to ensure the ramp configuration meets your needs and complies with safety standards.</li>
+      </ul>
+      <p>If you have any questions or need to discuss any specifics of the quote, please don't hesitate to contact us.</p>
+      <p>If you wish to accept this quote and proceed with the ramp rental, please click the button below:</p>
+      <a href="${process.env.FRONTEND_URL}/jobs/${jobId}/accept-quote" style="display: inline-block; padding: 10px 20px; color: white; background-color: green; text-decoration: none;">Accept Quote</a>
+      <p>Thank you for choosing Same Day Ramps. We look forward to serving you!</p>
+    `;
+
+    console.log('Sending email with quote HTML:', quoteHtml);
+
+    await sendEmail({
+      to: job.customerInfo.email,
+      subject: 'Your Ramp Rental Quote - Same Day Ramps',
+      html: quoteHtml,
+    });
+
+    // Update the job's quoteHtml field with the new content
+    job.quoteHtml = quoteHtml;
+    await job.save();
+
+    logger.info(`Quote email sent successfully for job: ${jobId}`);
+    res.json({ message: 'Quote email sent successfully' });
+  } catch (error) {
+    logger.error(`Error sending quote for job ${jobId}`, error);
+    console.error('Detailed error:', error);
+    next(error);
+  }
+};
+
+export const acceptQuote = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const jobId = req.params.id;
+
+  try {
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      logger.warn(`Job not found for ID: ${jobId}`);
+      throw new CustomError('Job not found', 404);
+    }
+
+    if (job.stage !== JobStage.QUOTE_SENT) {
+      logger.warn(`Invalid job stage for accepting quote: ${job.stage}`);
+      throw new CustomError('Quote cannot be accepted at this stage', 400);
+    }
+
+    // Update job stage
+    job.stage = JobStage.QUOTE_ACCEPTED;
+    await job.save();
+
+    // Send Pushover notification
+    await sendPushoverNotification({
+      token: process.env.PUSHOVER_APP_TOKEN || '',
+      user: process.env.PUSHOVER_USER_KEY || '',
+      message: `Quote accepted for Job ${jobId}`,
+      title: 'Quote Accepted',
+    });
+
+    logger.info(`Quote accepted for job: ${jobId}`);
+    res.json({ message: 'Quote accepted successfully' });
+
+  } catch (error) {
+    logger.error(`Error accepting quote for job ${jobId}`, error);
+    next(error);
   }
 };

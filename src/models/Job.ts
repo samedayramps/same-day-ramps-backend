@@ -23,6 +23,7 @@ export interface IJob extends Document {
   updatedAt: Date;
   paymentLinkUrl?: string;
   agreementLink?: string;
+  quoteHtml?: string; // Add this line
 }
 
 const JobSchema: Schema = new Schema(
@@ -80,6 +81,7 @@ const JobSchema: Schema = new Schema(
     ],
     paymentLinkUrl: { type: String },
     agreementLink: { type: String },
+    quoteHtml: { type: String }, // Add this line
   },
   { timestamps: true }
 );
