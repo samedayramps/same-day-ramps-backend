@@ -71,4 +71,14 @@ router.post(
   asyncHandler(jobController.completeJob)
 );
 
+router.post(
+  '/:id/create-payment-link',
+  asyncHandler(jobController.createPaymentLink)
+);
+
+router.post(
+  '/:id/create-agreement-link',
+  asyncHandler(jobController.createAgreementLink)
+);
+
 export default router;

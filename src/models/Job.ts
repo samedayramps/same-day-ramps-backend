@@ -21,6 +21,8 @@ export interface IJob extends Document {
   }>;
   createdAt: Date;
   updatedAt: Date;
+  paymentLinkUrl?: string;
+  agreementLink?: string;
 }
 
 const JobSchema: Schema = new Schema(
@@ -76,6 +78,8 @@ const JobSchema: Schema = new Schema(
         notes: { type: String },
       },
     ],
+    paymentLinkUrl: { type: String },
+    agreementLink: { type: String },
   },
   { timestamps: true }
 );

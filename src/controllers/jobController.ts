@@ -13,6 +13,17 @@ import {
 import { JobStage, RampConfiguration } from '../types/Job';
 import logger from '../utils/logger';
 import mongoose from 'mongoose'; // Add this import
+import Stripe from 'stripe';
+import { CustomError } from '../utils/customError';
+import axios from 'axios';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2024-06-20', // Update to the latest API version
+});
+
+// Add this near the top of the file, after other imports
+const ESIGNATURES_API_KEY = process.env.ESIGNATURES_API_KEY;
+const ESIGNATURES_API_URL = 'https://esignatures.io/api'; // Ensure this is the correct URL
 
 export const getAllJobs = async (
   req: Request,
@@ -429,5 +440,172 @@ export const completeJob = async (
     res.json({ message: 'Job marked as completed', job });
   } catch (error) {
     next(error);
+  }
+};
+
+export const createPaymentLink = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const jobId = req.params.id;
+  
+  try {
+    logger.info(`Attempting to create payment link for job ${jobId}`);
+
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      logger.warn(`Job not found for ID: ${jobId}`);
+      throw new CustomError('Job not found', 404);
+    }
+
+    if (!job.pricing || !job.pricing.upfrontFee) {
+      logger.error(`Job ${jobId} is missing pricing information`);
+      throw new CustomError('Job is missing pricing information', 400);
+    }
+
+    if (job.paymentLinkUrl) {
+      logger.info(`Payment link already exists for job ${jobId}`);
+      res.json({ paymentLinkUrl: job.paymentLinkUrl });
+      return;
+    }
+
+    // Create a price object first
+    const price = await stripe.prices.create({
+      unit_amount: Math.round(job.pricing.upfrontFee * 100), // Convert to cents
+      currency: 'usd',
+      product_data: {
+        name: `Ramp Rental - Job ${jobId}`,
+      },
+    });
+
+    // Create the payment link using the price ID
+    const paymentLink = await stripe.paymentLinks.create({
+      line_items: [
+        {
+          price: price.id,
+          quantity: 1,
+        },
+      ],
+      after_completion: { type: 'redirect', redirect: { url: `${process.env.FRONTEND_URL}/jobs/${jobId}` } },
+    });
+
+    // Save the payment link URL to the job in the database
+    job.paymentLinkUrl = paymentLink.url;
+    job.stage = JobStage.QUOTE_SENT;
+    await job.save();
+
+    logger.info(`Payment link created successfully for job ${jobId}`, { paymentLinkUrl: paymentLink.url });
+    res.json({ paymentLinkUrl: paymentLink.url });
+  } catch (error) {
+    if (error instanceof CustomError) {
+      logger.warn(`Custom error in createPaymentLink for job ${jobId}: ${error.message}`);
+      res.status(error.statusCode).json({ message: error.message });
+    } else if (error instanceof Stripe.errors.StripeError) {
+      logger.error(`Stripe error in createPaymentLink for job ${jobId}:`, error);
+      res.status(500).json({ message: 'An error occurred while processing the payment link' });
+    } else {
+      logger.error(`Unexpected error in createPaymentLink for job ${jobId}:`, error);
+      next(error);
+    }
+  }
+};
+
+export const createAgreementLink = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const jobId = req.params.id;
+
+  try {
+    logger.info(`Attempting to create agreement link for job ${jobId}`);
+
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      logger.warn(`Job not found for ID: ${jobId}`);
+      throw new CustomError('Job not found', 404);
+    }
+
+    if (!job.customerInfo || !job.customerInfo.email) {
+      logger.error(`Job ${jobId} is missing customer information`);
+      throw new CustomError('Job is missing customer information', 400);
+    }
+
+    // Prepare the variables to pass to the template
+    const variables = {
+      date: new Date().toLocaleDateString(),
+      customerName: `${job.customerInfo.firstName} ${job.customerInfo.lastName}`,
+      totalLength: job.rampConfiguration?.totalLength || 'N/A',
+      'number-of-landings': job.rampConfiguration?.components?.filter(c => c.type === 'landing').reduce((sum, c) => sum + (c.quantity || 0), 0) || 0,
+      monthlyRentalRate: job.pricing?.monthlyRate?.toFixed(2) || '0.00',
+      totalUpfront: job.pricing?.upfrontFee?.toFixed(2) || '0.00',
+      installAddress: job.customerInfo.installAddress || 'N/A',
+    };
+
+    const requestBody = {
+      template_id: '4d28517b-968e-4973-a8fc-d1900e82e093',
+      signers: [
+        {
+          name: variables.customerName,
+          email: job.customerInfo.email,
+        },
+      ],
+      fields: variables, // Pass the variables here
+      test: 'yes',
+    };
+
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+    };
+
+    logger.info('eSignatures.io API request payload:', requestBody);
+    logger.info('eSignatures.io API request headers:', requestHeaders);
+
+    // Create agreement link using eSignatures.io API
+    const response = await axios.post(
+      `${ESIGNATURES_API_URL}/contracts?token=${ESIGNATURES_API_KEY}`,
+      requestBody,
+      { headers: requestHeaders }
+    );
+
+    logger.info('eSignatures.io API response:', response.data);
+
+    // Safely extract the agreement link
+    const agreementLink = response.data.data?.contract?.signers?.[0]?.sign_page_url;
+
+    if (!agreementLink) {
+      logger.error(`Agreement link not found in API response for job ${jobId}`);
+      throw new CustomError('Failed to retrieve agreement link from API response', 500);
+    }
+
+    // Save the agreement link to the job in the database
+    job.agreementLink = agreementLink;
+    await job.save();
+
+    logger.info(`Agreement link created successfully for job ${jobId}`, { agreementLink });
+    res.json({ agreementLink });
+  } catch (error) {
+    if (error instanceof CustomError) {
+      logger.warn(`Custom error in createAgreementLink for job ${jobId}: ${error.message}`);
+      res.status(error.statusCode).json({ message: error.message });
+    } else if (axios.isAxiosError(error)) {
+      logger.error(`eSignatures.io API error in createAgreementLink for job ${jobId}:`, {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        headers: error.response?.headers,
+      });
+      res.status(500).json({ message: 'An error occurred while creating the agreement link' });
+    } else {
+      const err = error as Error;
+      logger.error(`Unexpected error in createAgreementLink for job ${jobId}:`, {
+        message: err.message,
+        stack: err.stack,
+      });
+      next(err);
+    }
   }
 };
