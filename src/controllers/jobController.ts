@@ -821,6 +821,11 @@ export const acceptQuote = async (
       logger.info(`Quote already accepted for job: ${jobId}`);
     }
 
+    // Get customer name
+    const customerName = job.customerInfo ? 
+      `${job.customerInfo.firstName} ${job.customerInfo.lastName}`.trim() : 
+      'Unknown Customer';
+
     // Send Pushover notification
     const pushoverToken = process.env.PUSHOVER_API_TOKEN;
     const pushoverUser = process.env.PUSHOVER_USER_KEY;
@@ -832,7 +837,7 @@ export const acceptQuote = async (
         await sendPushoverNotification({
           token: pushoverToken,
           user: pushoverUser,
-          message: `Quote accepted for Job ${jobId}`,
+          message: `Quote accepted for Job ${jobId} by ${customerName}`,
           title: 'Quote Accepted',
         });
         logger.info(`Pushover notification sent for job: ${jobId}`);
