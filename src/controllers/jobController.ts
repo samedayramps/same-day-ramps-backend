@@ -806,25 +806,35 @@ export const acceptQuote = async (
     }
 
     // Check if the job is in a valid stage for accepting a quote
-    const validStages = [JobStage.REQUESTED, JobStage.QUOTE_SENT];
+    const validStages = [JobStage.REQUESTED, JobStage.QUOTE_SENT, JobStage.QUOTE_ACCEPTED];
     if (!validStages.includes(job.stage)) {
       logger.warn(`Invalid job stage for accepting quote: ${job.stage}`);
       throw new CustomError('Quote cannot be accepted at this stage', 400);
     }
 
-    // Update job stage
-    job.stage = JobStage.QUOTE_ACCEPTED;
-    await job.save();
+    // Update job stage if it's not already QUOTE_ACCEPTED
+    if (job.stage !== JobStage.QUOTE_ACCEPTED) {
+      job.stage = JobStage.QUOTE_ACCEPTED;
+      await job.save();
+      logger.info(`Job stage updated to QUOTE_ACCEPTED for job: ${jobId}`);
+    } else {
+      logger.info(`Quote already accepted for job: ${jobId}`);
+    }
 
     // Send Pushover notification
-    await sendPushoverNotification({
-      token: process.env.PUSHOVER_APP_TOKEN || '',
-      user: process.env.PUSHOVER_USER_KEY || '',
-      message: `Quote accepted for Job ${jobId}`,
-      title: 'Quote Accepted',
-    });
+    try {
+      await sendPushoverNotification({
+        token: process.env.PUSHOVER_APP_TOKEN || '',
+        user: process.env.PUSHOVER_USER_KEY || '',
+        message: `Quote accepted for Job ${jobId}`,
+        title: 'Quote Accepted',
+      });
+      logger.info(`Pushover notification sent for job: ${jobId}`);
+    } catch (notificationError) {
+      logger.error(`Failed to send Pushover notification for job ${jobId}`, notificationError);
+      // We don't throw here to avoid failing the whole operation if just the notification fails
+    }
 
-    logger.info(`Quote accepted for job: ${jobId}`);
     res.json({ message: 'Quote accepted successfully' });
 
   } catch (error) {
