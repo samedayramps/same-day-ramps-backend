@@ -822,17 +822,24 @@ export const acceptQuote = async (
     }
 
     // Send Pushover notification
-    try {
-      await sendPushoverNotification({
-        token: process.env.PUSHOVER_APP_TOKEN || '',
-        user: process.env.PUSHOVER_USER_KEY || '',
-        message: `Quote accepted for Job ${jobId}`,
-        title: 'Quote Accepted',
-      });
-      logger.info(`Pushover notification sent for job: ${jobId}`);
-    } catch (notificationError) {
-      logger.error(`Failed to send Pushover notification for job ${jobId}`, notificationError);
-      // We don't throw here to avoid failing the whole operation if just the notification fails
+    const pushoverToken = process.env.PUSHOVER_API_TOKEN;
+    const pushoverUser = process.env.PUSHOVER_USER_KEY;
+
+    if (!pushoverToken || !pushoverUser) {
+      logger.error('Pushover credentials are missing');
+    } else {
+      try {
+        await sendPushoverNotification({
+          token: pushoverToken,
+          user: pushoverUser,
+          message: `Quote accepted for Job ${jobId}`,
+          title: 'Quote Accepted',
+        });
+        logger.info(`Pushover notification sent for job: ${jobId}`);
+      } catch (notificationError) {
+        logger.error(`Failed to send Pushover notification for job ${jobId}`, notificationError);
+        // We don't throw here to avoid failing the whole operation if just the notification fails
+      }
     }
 
     res.json({ message: 'Quote accepted successfully' });
