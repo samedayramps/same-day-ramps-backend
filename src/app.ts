@@ -24,7 +24,7 @@ const corsOptions: cors.CorsOptions = {
       'http://localhost:3000',
       'https://same-day-ramps-com.vercel.app/',
       'https://app.samedayramps.com',
-      'https://samedayramps.com', // Added this line
+      'https://www.samedayramps.com', // Added this line
     ].filter(Boolean);
 
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
