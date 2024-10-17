@@ -3,6 +3,7 @@ import cors from 'cors';
 import jobsRouter from './routes/jobs';
 import rentalRequestsRouter from './routes/rentalRequests';
 import pricingVariablesRouter from './routes/pricingVariables';
+import contactRouter from './routes/contact';
 import { errorHandler } from './middlewares/errorHandler';
 import dotenv from 'dotenv';
 import logger from './utils/logger';
@@ -24,7 +25,7 @@ const corsOptions: cors.CorsOptions = {
       'http://localhost:3000',
       'https://same-day-ramps-com.vercel.app/',
       'https://app.samedayramps.com',
-      'https://www.samedayramps.com', // Added this line
+      'https://www.samedayramps.com',
     ].filter(Boolean);
 
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -49,6 +50,7 @@ app.use((req, res, next) => {
 app.use('/api/jobs', jobsRouter);
 app.use('/api/rental-requests', rentalRequestsRouter);
 app.use('/api/pricing-variables', pricingVariablesRouter);
+app.use('/api/contact', contactRouter);
 
 // 404 handler
 app.use((req, res) => {
